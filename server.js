@@ -1,7 +1,10 @@
-const dotenvResult = require('dotenv').config();
-console.log('dotenv result:', dotenvResult);
+require('dotenv').config();
+
 console.log('current folder:', process.cwd());
-console.log('ROSTER_URL from server startup:', process.env.ROSTER_URL);
+console.log('Has ROSTER_USERNAME:', !!process.env.ROSTER_USERNAME);
+console.log('Has ROSTER_PASSWORD:', !!process.env.ROSTER_PASSWORD);
+console.log('ROSTER_URL from server startup:', process.env.ROSTER_URL || '(missing)');
+console.log('PARTNER_NAME from server startup:', process.env.PARTNER_NAME || '(missing)');
 
 const express = require('express');
 const { scrapeShifts } = require('./scraper');
@@ -20,7 +23,13 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true });
+  res.json({
+    ok: true,
+    hasRosterUsername: !!process.env.ROSTER_USERNAME,
+    hasRosterPassword: !!process.env.ROSTER_PASSWORD,
+    hasRosterUrl: !!process.env.ROSTER_URL,
+    partnerName: process.env.PARTNER_NAME || null
+  });
 });
 
 app.get('/test-scrape', async (req, res) => {
@@ -50,6 +59,6 @@ app.get('/roster.ics', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
