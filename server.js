@@ -37,7 +37,7 @@ app.get('/test-scrape', async (req, res) => {
     const result = await scrapeShifts();
     res.json({ ok: true, result });
   } catch (error) {
-    console.error(error);
+    console.error('TEST SCRAPE ERROR:', error);
     res.status(500).json({
       ok: false,
       error: error.message,
@@ -54,8 +54,8 @@ app.get('/roster.ics', async (req, res) => {
     res.setHeader('Content-Disposition', 'inline; filename="roster.ics"');
     res.send(ics);
   } catch (error) {
-    console.error(error);
-    res.status(500).send(`Failed to generate ICS: ${error.message}`);
+    console.error('ICS ERROR:', error);
+    res.status(500).send(`Failed to generate ICS. Error: ${error.message}`);
   }
 });
 

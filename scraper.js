@@ -71,9 +71,18 @@ function extractShiftsForPerson(text, personName, billboardDate) {
 }
 
 async function scrapeShifts() {
+  if (!process.env.ROSTER_URL) {
+    throw new Error('ROSTER_URL is missing');
+  }
+
   const browser = await chromium.launch({
-    headless: false,
-    slowMo: 300,
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu'
+    ]
   });
 
   const page = await browser.newPage();
@@ -108,7 +117,7 @@ async function scrapeShifts() {
     for (const selector of usernameSelectors) {
       const el = await page.$(selector);
       if (el) {
-        await page.fill(selector, process.env.ROSTER_USERNAME);
+        await page.fill(selector, process.env.ROSTER_USERNAME || '');
         usernameFilled = true;
         break;
       }
@@ -118,7 +127,7 @@ async function scrapeShifts() {
     for (const selector of passwordSelectors) {
       const el = await page.$(selector);
       if (el) {
-        await page.fill(selector, process.env.ROSTER_PASSWORD);
+        await page.fill(selector, process.env.ROSTER_PASSWORD || '');
         passwordFilled = true;
         break;
       }
@@ -168,6 +177,9 @@ async function scrapeShifts() {
       shifts,
       previewText: bodyText.slice(0, 1500)
     };
+  } catch (error) {
+    console.error('SCRAPER ERROR:', error);
+    throw error;
   } finally {
     await browser.close();
   }
