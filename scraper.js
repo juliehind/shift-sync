@@ -37,7 +37,6 @@ function extractShiftsForPerson(text, personName, fallbackDate) {
 
   const results = [];
   const upperName = personName.toUpperCase();
-
   const billboardDate = parseBillboardDate(text) || fallbackDate;
 
   for (let i = 0; i < lines.length; i++) {
@@ -93,24 +92,72 @@ function getFutureDayTimestamps(days = 56) {
 }
 
 function dedupeShifts(shifts) {
-    const seen = new Set();
-  
-    return shifts.filter((shift) => {
-      const key = [
-        shift.date,
-        shift.startTime,
-        shift.endTime
-      ].join('|');
-  
-      if (seen.has(key)) {
-        return false;
-      }
-  
-      seen.add(key);
-      return true;
-    });
+  const seen = new Set();
+
+  return shifts.filter((shift) => {
+    const key = [
+      shift.date,
+      shift.startTime,
+      shift.endTime
+    ].join('|');
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function toMinutes(timeStr) {
+  const hour = parseInt(timeStr.slice(0, 2), 10);
+  const minute = parseInt(timeStr.slice(2, 4), 10);
+  return hour * 60 + minute;
+}
+
+function getShiftRange(shift) {
+  let start = toMinutes(shift.startTime);
+  let end = toMinutes(shift.endTime);
+
+  if (end <= start) {
+    end += 24 * 60;
   }
-  
+
+  return { start, end };
+}
+
+function shiftsOverlap(a, b) {
+  const rangeA = getShiftRange(a);
+  const rangeB = getShiftRange(b);
+
+  return rangeA.start < rangeB.end && rangeB.start < rangeA.end;
+}
+
+function findOverlaps(bashShifts, lizShifts) {
+  const overlaps = [];
+
+  for (const bash of bashShifts) {
+    for (const liz of lizShifts) {
+      if (bash.date === liz.date && shiftsOverlap(bash, liz)) {
+        overlaps.push({
+          date: bash.date,
+          bashShift: bash.shiftLine,
+          bashStartTime: bash.startTime,
+          bashEndTime: bash.endTime,
+          lizShift: liz.shiftLine,
+          lizStartTime: liz.startTime,
+          lizEndTime: liz.endTime,
+          bashTeam: bash.team || '',
+          lizTeam: liz.team || ''
+        });
+      }
+    }
+  }
+
+  return overlaps;
+}
+
 async function performLogin(page) {
   await page.goto(process.env.ROSTER_URL, {
     waitUntil: 'domcontentloaded',
@@ -210,9 +257,13 @@ async function scrapeShifts() {
   });
 
   const page = await browser.newPage();
-  const personName = process.env.PARTNER_NAME || 'GARBA, Bashirr';
+
+  const bashName = process.env.PARTNER_NAME || 'GARBA, Bashirr';
+  const lizName = process.env.LIZ_NAME || 'LEAROYD, Lizzie';
+
   const timestamps = getFutureDayTimestamps(56);
-  const allShifts = [];
+  const bashAllShifts = [];
+  const lizAllShifts = [];
 
   try {
     await performLogin(page);
@@ -230,24 +281,38 @@ async function scrapeShifts() {
         await page.waitForTimeout(1500);
 
         const bodyText = await page.locator('body').innerText().catch(() => '');
-        const shifts = extractShiftsForPerson(bodyText, personName, fallbackDate);
 
-        allShifts.push(...shifts);
+        const bashShifts = extractShiftsForPerson(bodyText, bashName, fallbackDate);
+        const lizShifts = extractShiftsForPerson(bodyText, lizName, fallbackDate);
+
+        bashAllShifts.push(...bashShifts);
+        lizAllShifts.push(...lizShifts);
       } catch (dayError) {
         console.error(`DAY SCRAPE ERROR for ${fallbackDate}:`, dayError.message);
       }
     }
 
-    const deduped = dedupeShifts(allShifts).sort((a, b) => {
+    const bashDeduped = dedupeShifts(bashAllShifts).sort((a, b) => {
       const aKey = `${a.date}${a.startTime}`;
       const bKey = `${b.date}${b.startTime}`;
       return aKey.localeCompare(bKey);
     });
 
+    const lizDeduped = dedupeShifts(lizAllShifts).sort((a, b) => {
+      const aKey = `${a.date}${a.startTime}`;
+      const bKey = `${b.date}${b.startTime}`;
+      return aKey.localeCompare(bKey);
+    });
+
+    const overlaps = findOverlaps(bashDeduped, lizDeduped);
+
     return {
-      personName,
-      shifts: deduped,
-      count: deduped.length
+      personName: bashName,
+      lizName,
+      shifts: bashDeduped,
+      lizShifts: lizDeduped,
+      overlaps,
+      count: bashDeduped.length
     };
   } catch (error) {
     console.error('SCRAPER ERROR:', error);
