@@ -1,22 +1,6 @@
 const { createEvents } = require('ics');
 
-function makeDateArray(dateStr, timeStr) {
-  const [year, month, day] = dateStr.split('-').map(Number);
-  const hour = Number(timeStr.slice(0, 2));
-  const minute = Number(timeStr.slice(2, 4));
-  return [year, month, day, hour, minute];
-}
-
-function addDay(dateStr) {
-  const date = new Date(`${dateStr}T00:00:00`);
-  date.setDate(date.getDate() + 1);
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
+const BRISBANE_OFFSET_HOURS = 10; // Australia/Brisbane, no DST
 
 function buildUid(shift) {
   return [
@@ -29,6 +13,17 @@ function buildUid(shift) {
     .join('-')
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .toLowerCase();
+}
+
+function addDay(dateStr) {
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
 }
 
 function getShiftType(startTime) {
@@ -59,6 +54,28 @@ function getShiftColourName(shiftType) {
   return 'Red';
 }
 
+/**
+ * Convert Australia/Brisbane local date/time into a UTC date array for the ics package.
+ * Example:
+ * 2026-04-08 08:00 Brisbane -> 2026-04-07 22:00 UTC
+ */
+function brisbaneLocalToUtcArray(dateStr, timeStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const hour = Number(timeStr.slice(0, 2));
+  const minute = Number(timeStr.slice(2, 4));
+
+  const utcMillis = Date.UTC(year, month - 1, day, hour - BRISBANE_OFFSET_HOURS, minute, 0);
+  const d = new Date(utcMillis);
+
+  return [
+    d.getUTCFullYear(),
+    d.getUTCMonth() + 1,
+    d.getUTCDate(),
+    d.getUTCHours(),
+    d.getUTCMinutes()
+  ];
+}
+
 function shiftsToICS(shifts) {
   const events = shifts
     .filter(shift => shift.date && shift.startTime && shift.endTime)
@@ -71,8 +88,8 @@ function shiftsToICS(shifts) {
       return {
         uid: buildUid(shift),
         title: `${shiftType} – ${shift.shiftLine || shift.name}`,
-        start: makeDateArray(shift.date, shift.startTime),
-        end: makeDateArray(endDate, shift.endTime),
+        start: brisbaneLocalToUtcArray(shift.date, shift.startTime),
+        end: brisbaneLocalToUtcArray(endDate, shift.endTime),
         description: [
           `Name: ${shift.name || ''}`,
           `Role: ${shift.role || ''}`,
@@ -87,10 +104,10 @@ function shiftsToICS(shifts) {
         status: 'CONFIRMED',
         busyStatus: 'BUSY',
         productId: 'hrs-shift-sync',
-        startInputType: 'local',
-        startOutputType: 'local',
-        endInputType: 'local',
-        endOutputType: 'local'
+        startInputType: 'utc',
+        startOutputType: 'utc',
+        endInputType: 'utc',
+        endOutputType: 'utc'
       };
     });
 

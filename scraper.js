@@ -93,21 +93,30 @@ function getFutureDayTimestamps(days = 56) {
 }
 
 function dedupeShifts(shifts) {
-  const seen = new Set();
-  return shifts.filter((shift) => {
-    const key = [
-      shift.date,
-      shift.name,
-      shift.startTime,
-      shift.endTime,
-      shift.shiftLine
-    ].join('|');
-
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
+    const seen = new Set();
+  
+    return shifts.filter((shift) => {
+      const normalizedShiftLine = (shift.shiftLine || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toUpperCase();
+  
+      const key = [
+        shift.date,
+        (shift.name || '').trim().toUpperCase(),
+        shift.startTime,
+        shift.endTime,
+        normalizedShiftLine
+      ].join('|');
+  
+      if (seen.has(key)) {
+        return false;
+      }
+  
+      seen.add(key);
+      return true;
+    });
+  }
 
 async function performLogin(page) {
   await page.goto(process.env.ROSTER_URL, {
