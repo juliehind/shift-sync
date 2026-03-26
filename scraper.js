@@ -96,21 +96,10 @@ function dedupeShifts(shifts) {
     const seen = new Set();
   
     return shifts.filter((shift) => {
-      // Normalize shift line (remove team noise)
-      const normalizedShiftLine = (shift.shiftLine || '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toUpperCase();
-  
-      // Extract just the shift code (e.g. NG, NR, NP)
-      const shiftCodeMatch = normalizedShiftLine.match(/^[A-Z]+/);
-      const shiftCode = shiftCodeMatch ? shiftCodeMatch[0] : normalizedShiftLine;
-  
       const key = [
         shift.date,
         shift.startTime,
-        shift.endTime,
-        shiftCode
+        shift.endTime
       ].join('|');
   
       if (seen.has(key)) {
