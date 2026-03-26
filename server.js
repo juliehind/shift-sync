@@ -147,6 +147,26 @@ app.get('/roster.ics', async (req, res) => {
   }
 });
 
+app.get('/liz-overlaps', async (req, res) => {
+    try {
+      const result = await scrapeShifts();
+  
+      res.json({
+        ok: true,
+        bashName: result.personName,
+        lizName: result.lizName,
+        overlapCount: result.overlaps?.length || 0,
+        overlaps: result.overlaps || []
+      });
+    } catch (error) {
+      console.error('LIZ OVERLAPS ERROR:', error);
+      res.status(500).json({
+        ok: false,
+        error: error.message
+      });
+    }
+  });
+  
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
 
