@@ -28,7 +28,7 @@ function parseBillboardDate(text) {
   return `${year}-${month}-${day.padStart(2, '0')}`;
 }
 
-function extractShiftsForPerson(text, personName, billboardDate) {
+function extractShiftsForPerson(text, personName, fallbackDate) {
   const lines = text
     .replace(/\r/g, '')
     .split('\n')
@@ -37,6 +37,8 @@ function extractShiftsForPerson(text, personName, billboardDate) {
 
   const results = [];
   const upperName = personName.toUpperCase();
+
+  const billboardDate = parseBillboardDate(text) || fallbackDate;
 
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].toUpperCase() === upperName) {
@@ -70,9 +72,129 @@ function extractShiftsForPerson(text, personName, billboardDate) {
   return results;
 }
 
+function buildBillboardUrl(baseUrl, timestamp) {
+  const parts = baseUrl.split('/');
+  parts[parts.length - 1] = String(timestamp);
+  return parts.join('/');
+}
+
+function getFutureDayTimestamps(days = 56) {
+  const timestamps = [];
+  const now = new Date();
+
+  for (let i = 0; i < days; i++) {
+    const date = new Date(now);
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + i);
+    timestamps.push(date.getTime());
+  }
+
+  return timestamps;
+}
+
+function dedupeShifts(shifts) {
+  const seen = new Set();
+  return shifts.filter((shift) => {
+    const key = [
+      shift.date,
+      shift.name,
+      shift.startTime,
+      shift.endTime,
+      shift.shiftLine
+    ].join('|');
+
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function performLogin(page) {
+  await page.goto(process.env.ROSTER_URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 60000,
+  });
+
+  await page.waitForTimeout(2000);
+
+  const usernameSelectors = [
+    'input[name="username"]',
+    'input[name="email"]',
+    'input[type="email"]',
+    'input[type="text"]',
+    '#username',
+    '#email',
+    '#UserName',
+    '#Email'
+  ];
+
+  const passwordSelectors = [
+    'input[name="password"]',
+    'input[type="password"]',
+    '#password',
+    '#Password'
+  ];
+
+  let usernameFilled = false;
+  for (const selector of usernameSelectors) {
+    const el = await page.$(selector);
+    if (el) {
+      await page.fill(selector, process.env.ROSTER_USERNAME || '');
+      usernameFilled = true;
+      break;
+    }
+  }
+
+  let passwordFilled = false;
+  for (const selector of passwordSelectors) {
+    const el = await page.$(selector);
+    if (el) {
+      await page.fill(selector, process.env.ROSTER_PASSWORD || '');
+      passwordFilled = true;
+      break;
+    }
+  }
+
+  if (!usernameFilled || !passwordFilled) {
+    throw new Error('Could not find username or password field');
+  }
+
+  const submitSelectors = [
+    'button[type="submit"]',
+    'input[type="submit"]'
+  ];
+
+  let submitted = false;
+  for (const selector of submitSelectors) {
+    const el = await page.$(selector);
+    if (el) {
+      await Promise.all([
+        page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => null),
+        page.click(selector)
+      ]);
+      submitted = true;
+      break;
+    }
+  }
+
+  if (!submitted) {
+    throw new Error('Could not find login submit button');
+  }
+
+  await page.waitForTimeout(4000);
+}
+
 async function scrapeShifts() {
   if (!process.env.ROSTER_URL) {
     throw new Error('ROSTER_URL is missing');
+  }
+
+  if (!process.env.ROSTER_USERNAME) {
+    throw new Error('ROSTER_USERNAME is missing');
+  }
+
+  if (!process.env.ROSTER_PASSWORD) {
+    throw new Error('ROSTER_PASSWORD is missing');
   }
 
   const browser = await chromium.launch({
@@ -86,96 +208,44 @@ async function scrapeShifts() {
   });
 
   const page = await browser.newPage();
+  const personName = process.env.PARTNER_NAME || 'GARBA, Bashirr';
+  const timestamps = getFutureDayTimestamps(56);
+  const allShifts = [];
 
   try {
-    await page.goto(process.env.ROSTER_URL, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000,
+    await performLogin(page);
+
+    for (const timestamp of timestamps) {
+      const dayUrl = buildBillboardUrl(process.env.ROSTER_URL, timestamp);
+      const fallbackDate = new Date(timestamp).toISOString().slice(0, 10);
+
+      try {
+        await page.goto(dayUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 60000
+        });
+
+        await page.waitForTimeout(1500);
+
+        const bodyText = await page.locator('body').innerText().catch(() => '');
+        const shifts = extractShiftsForPerson(bodyText, personName, fallbackDate);
+
+        allShifts.push(...shifts);
+      } catch (dayError) {
+        console.error(`DAY SCRAPE ERROR for ${fallbackDate}:`, dayError.message);
+      }
+    }
+
+    const deduped = dedupeShifts(allShifts).sort((a, b) => {
+      const aKey = `${a.date}${a.startTime}`;
+      const bKey = `${b.date}${b.startTime}`;
+      return aKey.localeCompare(bKey);
     });
 
-    await page.waitForTimeout(2000);
-
-    const usernameSelectors = [
-      'input[name="username"]',
-      'input[name="email"]',
-      'input[type="email"]',
-      'input[type="text"]',
-      '#username',
-      '#email',
-      '#UserName',
-      '#Email'
-    ];
-
-    const passwordSelectors = [
-      'input[name="password"]',
-      'input[type="password"]',
-      '#password',
-      '#Password'
-    ];
-
-    let usernameFilled = false;
-    for (const selector of usernameSelectors) {
-      const el = await page.$(selector);
-      if (el) {
-        await page.fill(selector, process.env.ROSTER_USERNAME || '');
-        usernameFilled = true;
-        break;
-      }
-    }
-
-    let passwordFilled = false;
-    for (const selector of passwordSelectors) {
-      const el = await page.$(selector);
-      if (el) {
-        await page.fill(selector, process.env.ROSTER_PASSWORD || '');
-        passwordFilled = true;
-        break;
-      }
-    }
-
-    if (!usernameFilled || !passwordFilled) {
-      throw new Error('Could not find username or password field');
-    }
-
-    const submitSelectors = [
-      'button[type="submit"]',
-      'input[type="submit"]'
-    ];
-
-    let submitted = false;
-    for (const selector of submitSelectors) {
-      const el = await page.$(selector);
-      if (el) {
-        await Promise.all([
-          page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => null),
-          page.click(selector)
-        ]);
-        submitted = true;
-        break;
-      }
-    }
-
-    if (!submitted) {
-      throw new Error('Could not find login submit button');
-    }
-
-    await page.waitForTimeout(5000);
-
-    const title = await page.title();
-    const url = page.url();
-    const bodyText = await page.locator('body').innerText().catch(() => '');
-
-    const personName = process.env.PARTNER_NAME || 'GARBA, Bashirr';
-    const billboardDate = parseBillboardDate(bodyText);
-    const shifts = extractShiftsForPerson(bodyText, personName, billboardDate);
-
     return {
-      title,
-      url,
       personName,
-      billboardDate,
-      shifts,
-      previewText: bodyText.slice(0, 1500)
+      shifts: deduped,
+      count: deduped.length
     };
   } catch (error) {
     console.error('SCRAPER ERROR:', error);

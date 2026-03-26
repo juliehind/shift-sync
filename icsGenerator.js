@@ -31,32 +31,68 @@ function buildUid(shift) {
     .toLowerCase();
 }
 
-function shiftsToICS(shifts) {
-  const events = shifts.map((shift) => {
-    const isOvernight = shift.endTime < shift.startTime;
-    const endDate = isOvernight ? addDay(shift.date) : shift.date;
+function getShiftType(startTime) {
+  const hour = parseInt(startTime.slice(0, 2), 10);
+  const minute = parseInt(startTime.slice(2, 4), 10);
+  const totalMinutes = hour * 60 + minute;
 
-    return {
-      uid: buildUid(shift),
-      title: `${shift.name} Shift`,
-      start: makeDateArray(shift.date, shift.startTime),
-      end: makeDateArray(endDate, shift.endTime),
-      description: [
-        `Role: ${shift.role || ''}`,
-        `Shift: ${shift.shiftLine || ''}`,
-        `Team: ${shift.team || ''}`,
-        `Source: HRS Billboard Sync`
-      ].join('\n'),
-      location: shift.team || 'Hospital',
-      status: 'CONFIRMED',
-      busyStatus: 'BUSY',
-      productId: 'hrs-shift-sync',
-      startInputType: 'local',
-      startOutputType: 'local',
-      endInputType: 'local',
-      endOutputType: 'local'
-    };
-  });
+  const dayStart = 2 * 60;         // 02:00
+  const dayEnd = 10 * 60 + 59;     // 10:59
+
+  const eveningStart = 11 * 60;    // 11:00
+  const eveningEnd = 15 * 60 + 59; // 15:59
+
+  if (totalMinutes >= dayStart && totalMinutes <= dayEnd) {
+    return 'Day Shift';
+  }
+
+  if (totalMinutes >= eveningStart && totalMinutes <= eveningEnd) {
+    return 'Evening Shift';
+  }
+
+  return 'Night Shift';
+}
+
+function getShiftColourName(shiftType) {
+  if (shiftType === 'Day Shift') return 'Green';
+  if (shiftType === 'Evening Shift') return 'Orange';
+  return 'Red';
+}
+
+function shiftsToICS(shifts) {
+  const events = shifts
+    .filter(shift => shift.date && shift.startTime && shift.endTime)
+    .map((shift) => {
+      const isOvernight = shift.endTime < shift.startTime;
+      const endDate = isOvernight ? addDay(shift.date) : shift.date;
+      const shiftType = getShiftType(shift.startTime);
+      const colourName = getShiftColourName(shiftType);
+
+      return {
+        uid: buildUid(shift),
+        title: `${shiftType} – ${shift.shiftLine || shift.name}`,
+        start: makeDateArray(shift.date, shift.startTime),
+        end: makeDateArray(endDate, shift.endTime),
+        description: [
+          `Name: ${shift.name || ''}`,
+          `Role: ${shift.role || ''}`,
+          `Shift: ${shift.shiftLine || ''}`,
+          `Team: ${shift.team || ''}`,
+          `Shift Type: ${shiftType}`,
+          `Suggested Colour: ${colourName}`,
+          `Source: HRS Billboard Sync`
+        ].join('\n'),
+        location: shift.team || 'Hospital',
+        categories: [shiftType],
+        status: 'CONFIRMED',
+        busyStatus: 'BUSY',
+        productId: 'hrs-shift-sync',
+        startInputType: 'local',
+        startOutputType: 'local',
+        endInputType: 'local',
+        endOutputType: 'local'
+      };
+    });
 
   const { error, value } = createEvents(events);
 
