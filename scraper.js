@@ -96,17 +96,21 @@ function dedupeShifts(shifts) {
     const seen = new Set();
   
     return shifts.filter((shift) => {
+      // Normalize shift line (remove team noise)
       const normalizedShiftLine = (shift.shiftLine || '')
         .replace(/\s+/g, ' ')
         .trim()
         .toUpperCase();
   
+      // Extract just the shift code (e.g. NG, NR, NP)
+      const shiftCodeMatch = normalizedShiftLine.match(/^[A-Z]+/);
+      const shiftCode = shiftCodeMatch ? shiftCodeMatch[0] : normalizedShiftLine;
+  
       const key = [
         shift.date,
-        (shift.name || '').trim().toUpperCase(),
         shift.startTime,
         shift.endTime,
-        normalizedShiftLine
+        shiftCode
       ].join('|');
   
       if (seen.has(key)) {
@@ -117,7 +121,7 @@ function dedupeShifts(shifts) {
       return true;
     });
   }
-
+  
 async function performLogin(page) {
   await page.goto(process.env.ROSTER_URL, {
     waitUntil: 'domcontentloaded',
