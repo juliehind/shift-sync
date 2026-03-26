@@ -146,6 +146,22 @@ app.get('/roster.ics', async (req, res) => {
     res.status(500).send(`Failed to generate ICS. Error: ${error.message}`);
   }
 });
+app.get('/roster-v2.ics', async (req, res) => {
+    try {
+      await refreshCache(false);
+  
+      if (!cachedICS) {
+        throw new Error('ICS cache is empty');
+      }
+  
+      res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+      res.setHeader('Content-Disposition', 'inline; filename="roster-v2.ics"');
+      res.send(cachedICS);
+    } catch (error) {
+      console.error('ICS ERROR:', error);
+      res.status(500).send(`Failed to generate ICS. Error: ${error.message}`);
+    }
+  });
 
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
