@@ -213,12 +213,22 @@ app.get('/liz-debug', async (req, res) => {
 
 app.get('/api/dashboard-data', async (req, res) => {
     try {
-      const result = await scrapeShifts();
+      if (!cachedScrapeResult) {
+        await refreshCache(true);
+      } else {
+        await refreshCache(false);
+      }
+  
+      if (!cachedScrapeResult) {
+        throw new Error('Cached scrape result is empty');
+      }
   
       res.json({
         ok: true,
-        bashirrShifts: result.shifts || [],
-        lizOverlaps: result.lizOverlaps || []
+        bashirrShifts: cachedScrapeResult.shifts || [],
+        lizShifts: cachedScrapeResult.lizShifts || [],
+        lizOverlaps: cachedScrapeResult.overlaps || [],
+        cacheMeta: cachedMeta
       });
     } catch (error) {
       console.error('DASHBOARD DATA ERROR:', error);
@@ -228,7 +238,7 @@ app.get('/api/dashboard-data', async (req, res) => {
       });
     }
   });
-  
+
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
 
