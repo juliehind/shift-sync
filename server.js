@@ -211,6 +211,24 @@ app.get('/liz-debug', async (req, res) => {
   }
 });
 
+app.get('/api/dashboard-data', async (req, res) => {
+    try {
+      const result = await scrapeShifts();
+  
+      res.json({
+        ok: true,
+        bashirrShifts: result.shifts || [],
+        lizOverlaps: result.lizOverlaps || []
+      });
+    } catch (error) {
+      console.error('DASHBOARD DATA ERROR:', error);
+      res.status(500).json({
+        ok: false,
+        error: error.message
+      });
+    }
+  });
+  
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
 
