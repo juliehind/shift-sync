@@ -28,6 +28,80 @@ function parseBillboardDate(text) {
   return `${year}-${month}-${day.padStart(2, '0')}`;
 }
 
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(dateStr, delta) {
+  const date = new Date(`${dateStr}T00:00:00`);
+  date.setDate(date.getDate() + delta);
+  return formatDate(date);
+}
+
+function getWeekdayShort(dateStr) {
+  const date = new Date(`${dateStr}T00:00:00`);
+  return date.toLocaleDateString('en-AU', { weekday: 'short' });
+}
+
+function isDaySpanLine(line) {
+  return /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*\/\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/i.test(line.trim());
+}
+
+function normalizeDaySpan(line) {
+  const match = line.trim().match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*\/\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/i);
+  if (!match) return null;
+  return {
+    firstDay: match[1].slice(0, 1).toUpperCase() + match[1].slice(1, 3).toLowerCase(),
+    secondDay: match[2].slice(0, 1).toUpperCase() + match[2].slice(1, 3).toLowerCase()
+  };
+}
+
+function resolveOvernightStartDate(pageDate, nearbyDaySpan) {
+  if (!nearbyDaySpan) {
+    return pageDate;
+  }
+
+  const normalized = normalizeDaySpan(nearbyDaySpan);
+  if (!normalized) {
+    return pageDate;
+  }
+
+  const pageWeekday = getWeekdayShort(pageDate);
+
+  // If the page weekday matches the SECOND day in "Thu / Fri",
+  // the overnight shift likely started the previous day.
+  if (normalized.secondDay === pageWeekday) {
+    return addDays(pageDate, -1);
+  }
+
+  // If the page weekday matches the FIRST day in "Fri / Sat",
+  // the overnight shift likely starts on the page date.
+  if (normalized.firstDay === pageWeekday) {
+    return pageDate;
+  }
+
+  return pageDate;
+}
+
+function extractNearbyDaySpan(lines, nameIndex) {
+  for (let j = nameIndex - 1; j >= 0 && j >= nameIndex - 6; j--) {
+    if (isDaySpanLine(lines[j])) {
+      return lines[j].trim();
+    }
+  }
+
+  for (let j = nameIndex + 1; j <= nameIndex + 4 && j < lines.length; j++) {
+    if (isDaySpanLine(lines[j])) {
+      return lines[j].trim();
+    }
+  }
+
+  return '';
+}
+
 function extractShiftsForPerson(text, personName, fallbackDate) {
   const lines = text
     .replace(/\r/g, '')
@@ -44,6 +118,7 @@ function extractShiftsForPerson(text, personName, fallbackDate) {
       const name = lines[i];
       const role = lines[i + 1] || '';
       const shiftLine = lines[i + 2] || '';
+      const nearbyDaySpan = extractNearbyDaySpan(lines, i);
 
       const timeMatch = shiftLine.match(/\((\d{4})-(\d{4})\)/);
 
@@ -55,15 +130,26 @@ function extractShiftsForPerson(text, personName, fallbackDate) {
         }
       }
 
+      let actualDate = billboardDate;
+      let startTime = timeMatch ? timeMatch[1] : '';
+      let endTime = timeMatch ? timeMatch[2] : '';
+
+      const isOvernight = startTime && endTime && endTime <= startTime;
+      if (isOvernight) {
+        actualDate = resolveOvernightStartDate(billboardDate, nearbyDaySpan);
+      }
+
       results.push({
-        date: billboardDate,
+        date: actualDate,
+        sourcePageDate: billboardDate,
+        nearbyDaySpan,
         name,
         team,
         role,
         shiftLine,
-        startTime: timeMatch ? timeMatch[1] : '',
-        endTime: timeMatch ? timeMatch[2] : '',
-        context: lines.slice(Math.max(0, i - 3), i + 6)
+        startTime,
+        endTime,
+        context: lines.slice(Math.max(0, i - 4), i + 7)
       });
     }
   }
